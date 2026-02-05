@@ -3,6 +3,11 @@ import { annotations } from '../../utils/storage'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  annotations.push(body)
+  const idx = annotations.findIndex((a) => a.id === body.id)
+  if (idx !== -1) {
+    annotations[idx] = body
+  } else {
+    annotations.push(body)
+  }
   return { ok: true }
 })

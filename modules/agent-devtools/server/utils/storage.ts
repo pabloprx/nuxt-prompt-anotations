@@ -22,6 +22,9 @@ interface Annotation {
   comment: string
   timestamp: string
   rect: { x: number; y: number; w: number; h: number }
+  cssClasses: string
+  cssSelector: string
+  componentTree: string[]
 }
 
 export const clientRequests: CapturedRequest[] = []
