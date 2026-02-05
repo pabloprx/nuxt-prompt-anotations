@@ -3,8 +3,10 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useState } from '#imports'
 
 const annotating = useState<boolean>('__agent_annotating')
+const annotations = useState<any[]>('__agent_annotations')
 const requests = useState<any[]>('__agent_requests')
 const selectedRequestIds = useState<string[]>('__agent_selected_requests', () => [])
+const expandedRequestId = ref<string | null>(null)
 
 const showNetwork = ref(false)
 const showExport = ref(false)
@@ -41,10 +43,26 @@ const badgeColor = computed(() => {
   return errorCount.value > 0 ? '#ff4757' : '#00d4ff'
 })
 
-// Reversed requests (newest first)
-const reversedRequests = computed(() => {
-  return [...(requests.value ?? [])].reverse()
-})
+// Extract path from URL (strip host)
+function getPath(url: string): string {
+  try {
+    const u = new URL(url, 'http://localhost')
+    return u.pathname + u.search
+  } catch {
+    return url
+  }
+}
+
+// Toggle request expansion
+function toggleExpand(id: string) {
+  expandedRequestId.value = expandedRequestId.value === id ? null : id
+}
+
+// Format headers for display
+function formatHeaders(headers: Record<string, string> | undefined): string {
+  if (!headers || Object.keys(headers).length === 0) return ''
+  return Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\n')
+}
 
 // Selection helpers
 const selectedSet = computed(() => new Set(selectedRequestIds.value))
@@ -73,12 +91,14 @@ const allSelected = computed(() => {
 // Export badge: count of selected items
 const exportBadgeCount = computed(() => selectedRequestIds.value.length)
 
-// Clear all captured data
+// Clear all captured data (requests + annotations)
 async function clearAll() {
   try {
     await fetch('/api/__agent/clear', { method: 'DELETE' })
     requests.value = []
+    annotations.value = []
     selectedRequestIds.value = []
+    expandedRequestId.value = null
   } catch {
     // silent
   }
@@ -156,6 +176,18 @@ onBeforeUnmount(() => {
             class="agent-toolbar__badge agent-toolbar__badge--export"
           >{{ exportBadgeCount }}</span>
         </button>
+        <button
+          v-if="requests?.length || annotations?.length"
+          class="agent-toolbar__btn agent-toolbar__btn--reset"
+          title="Reset all"
+          @click="clearAll"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18" />
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+          </svg>
+        </button>
       </div>
 
       <!-- Network panel -->
@@ -178,27 +210,56 @@ onBeforeUnmount(() => {
           </div>
           <div class="agent-toolbar__panel-scroll">
             <div
-              v-for="req in reversedRequests"
+              v-for="req in requests"
               :key="req.id"
-              class="agent-toolbar__request"
-              :class="{ 'agent-toolbar__request--selected': selectedSet.has(req.id) }"
-              :style="{ borderLeftColor: statusColor(req.status) }"
+              class="agent-toolbar__request-wrap"
             >
-              <input
-                type="checkbox"
-                class="agent-toolbar__req-check"
-                :checked="selectedSet.has(req.id)"
-                @change="toggleRequest(req.id)"
-              />
-              <span class="agent-toolbar__req-method">{{ req.method }}</span>
-              <span class="agent-toolbar__req-url" :title="req.url">{{ req.url }}</span>
-              <span
-                class="agent-toolbar__req-status"
-                :style="{ color: statusColor(req.status) }"
+              <div
+                class="agent-toolbar__request"
+                :class="{ 'agent-toolbar__request--selected': selectedSet.has(req.id), 'agent-toolbar__request--expanded': expandedRequestId === req.id }"
+                :style="{ borderLeftColor: statusColor(req.status) }"
+                @click="toggleExpand(req.id)"
               >
-                {{ req.status || 'ERR' }}
-              </span>
-              <span class="agent-toolbar__req-duration">{{ req.duration }}ms</span>
+                <input
+                  type="checkbox"
+                  class="agent-toolbar__req-check"
+                  :checked="selectedSet.has(req.id)"
+                  @click.stop
+                  @change="toggleRequest(req.id)"
+                />
+                <span class="agent-toolbar__req-method">{{ req.method }}</span>
+                <span class="agent-toolbar__req-url" :title="req.url">{{ getPath(req.url) }}</span>
+                <span
+                  class="agent-toolbar__req-status"
+                  :style="{ color: statusColor(req.status) }"
+                >
+                  {{ req.status || 'ERR' }}
+                </span>
+                <span class="agent-toolbar__req-duration">{{ req.duration }}ms</span>
+                <span class="agent-toolbar__req-expand">{{ expandedRequestId === req.id ? '▲' : '▼' }}</span>
+              </div>
+              <div v-if="expandedRequestId === req.id" class="agent-toolbar__req-details">
+                <div class="agent-toolbar__req-detail-url">{{ req.url }}</div>
+                <div v-if="req.requestHeaders && Object.keys(req.requestHeaders).length" class="agent-toolbar__req-section">
+                  <div class="agent-toolbar__req-section-label">Request Headers</div>
+                  <pre class="agent-toolbar__req-pre">{{ formatHeaders(req.requestHeaders) }}</pre>
+                </div>
+                <div v-if="req.requestBody" class="agent-toolbar__req-section">
+                  <div class="agent-toolbar__req-section-label">Request Body</div>
+                  <pre class="agent-toolbar__req-pre">{{ req.requestBody }}</pre>
+                </div>
+                <div v-if="req.responseHeaders && Object.keys(req.responseHeaders).length" class="agent-toolbar__req-section">
+                  <div class="agent-toolbar__req-section-label">Response Headers</div>
+                  <pre class="agent-toolbar__req-pre">{{ formatHeaders(req.responseHeaders) }}</pre>
+                </div>
+                <div v-if="req.responseBody" class="agent-toolbar__req-section">
+                  <div class="agent-toolbar__req-section-label">Response Body</div>
+                  <pre class="agent-toolbar__req-pre">{{ req.responseBody }}</pre>
+                </div>
+                <div v-if="!req.requestBody && !req.responseBody && !req.requestHeaders" class="agent-toolbar__req-empty">
+                  No details captured.
+                </div>
+              </div>
             </div>
             <div v-if="!requests?.length" class="agent-toolbar__empty">
               No requests captured yet.
@@ -259,6 +320,15 @@ onBeforeUnmount(() => {
 .agent-toolbar__btn--active {
   background: #00d4ff33;
   color: #00d4ff;
+}
+
+.agent-toolbar__btn--reset {
+  color: #ff6b7f;
+}
+
+.agent-toolbar__btn--reset:hover {
+  background: #ff47571a;
+  color: #ff4757;
 }
 
 .agent-toolbar__badge {
@@ -346,6 +416,10 @@ onBeforeUnmount(() => {
   padding: 6px;
 }
 
+.agent-toolbar__request-wrap {
+  margin-bottom: 4px;
+}
+
 .agent-toolbar__request {
   display: flex;
   align-items: center;
@@ -353,15 +427,83 @@ onBeforeUnmount(() => {
   padding: 6px 8px;
   border-left: 3px solid #2ed573;
   border-radius: 4px;
-  margin-bottom: 4px;
   background: #16162a;
   font-size: 12px;
   color: #c0c0e0;
+  cursor: pointer;
   transition: background 0.15s;
+}
+
+.agent-toolbar__request:hover {
+  background: #1e1e3a;
 }
 
 .agent-toolbar__request--selected {
   background: #00d4ff0d;
+}
+
+.agent-toolbar__request--expanded {
+  border-radius: 4px 4px 0 0;
+}
+
+.agent-toolbar__req-expand {
+  font-size: 10px;
+  color: #6060a0;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.agent-toolbar__req-details {
+  background: #12122a;
+  border-left: 3px solid #2a2a4e;
+  border-radius: 0 0 4px 4px;
+  padding: 8px;
+  font-size: 11px;
+}
+
+.agent-toolbar__req-detail-url {
+  color: #6060a0;
+  font-size: 10px;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.agent-toolbar__req-section {
+  margin-bottom: 8px;
+}
+
+.agent-toolbar__req-section:last-child {
+  margin-bottom: 0;
+}
+
+.agent-toolbar__req-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #8080a0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+}
+
+.agent-toolbar__req-pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: #0d0d1a;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #a0a0c0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.agent-toolbar__req-empty {
+  font-size: 11px;
+  color: #6060a0;
+  font-style: italic;
 }
 
 .agent-toolbar__req-check {
