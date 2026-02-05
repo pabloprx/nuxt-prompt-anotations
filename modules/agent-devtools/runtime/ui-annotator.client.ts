@@ -1,4 +1,6 @@
 import { defineNuxtPlugin, useState } from '#imports'
+import { h, render } from 'vue'
+import AgentToolbar from './components/AgentToolbar.vue'
 
 interface Annotation {
   id: string
@@ -11,9 +13,19 @@ interface Annotation {
   rect: { x: number; y: number; w: number; h: number }
 }
 
-export default defineNuxtPlugin(async () => {
+export default defineNuxtPlugin(async (nuxtApp) => {
   const annotating = useState<boolean>('__agent_annotating', () => false)
   const annotations = useState<Annotation[]>('__agent_annotations', () => [])
+
+  // Mount toolbar directly to body using Vue's render
+  const container = document.createElement('div')
+  container.id = '__agent-devtools-root'
+  document.body.appendChild(container)
+
+  // Use nuxtApp's vueApp context for proper reactivity
+  const vnode = h(AgentToolbar)
+  vnode.appContext = nuxtApp.vueApp._context
+  render(vnode, container)
 
   // Keyboard shortcut: Cmd+Shift+A toggles annotation mode
   window.addEventListener('keydown', (e: KeyboardEvent) => {

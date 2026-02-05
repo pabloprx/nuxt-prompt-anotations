@@ -9,7 +9,9 @@ export default defineNuxtModule({
     enabled: true,
   },
   setup(options, nuxt) {
+    console.log('[agent-devtools] setup called, enabled:', options.enabled, 'dev:', nuxt.options.dev)
     if (!options.enabled || !nuxt.options.dev) return
+    console.log('[agent-devtools] loading module...')
 
     const { resolve } = createResolver(import.meta.url)
 
