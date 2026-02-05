@@ -26,6 +26,7 @@ export default defineNuxtModule({
       { route: '/api/__agent/requests', handler: resolve('./server/api/__agent/requests.post'), method: 'post' as const },
       { route: '/api/__agent/annotations', handler: resolve('./server/api/__agent/annotations.get') },
       { route: '/api/__agent/annotations', handler: resolve('./server/api/__agent/annotations.post'), method: 'post' as const },
+      { route: '/api/__agent/annotations/:id', handler: resolve('./server/api/__agent/annotations/[id].delete'), method: 'delete' as const },
       { route: '/api/__agent/export', handler: resolve('./server/api/__agent/export.get') },
       { route: '/api/__agent/clear', handler: resolve('./server/api/__agent/clear.delete'), method: 'delete' as const },
     ]
