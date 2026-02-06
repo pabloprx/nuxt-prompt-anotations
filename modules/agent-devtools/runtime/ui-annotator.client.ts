@@ -1,5 +1,5 @@
 import { defineNuxtPlugin, useState } from '#imports'
-import { h, render } from 'vue'
+import { createApp } from 'vue'
 import AgentToolbar from './components/AgentToolbar.vue'
 
 interface Annotation {
@@ -17,15 +17,34 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   const annotating = useState<boolean>('__agent_annotating', () => false)
   const annotations = useState<Annotation[]>('__agent_annotations', () => [])
 
-  // Mount toolbar directly to body using Vue's render
+  // Create a sub-application for the toolbar with proper Vue context
   const container = document.createElement('div')
   container.id = '__agent-devtools-root'
   document.body.appendChild(container)
 
-  // Use nuxtApp's vueApp context for proper reactivity
-  const vnode = h(AgentToolbar)
-  vnode.appContext = nuxtApp.vueApp._context
-  render(vnode, container)
+  // Create sub-app and copy over Nuxt's global components, directives, provides
+  const subApp = createApp(AgentToolbar)
+
+  // Copy global properties from Nuxt's Vue app
+  const mainApp = nuxtApp.vueApp
+  subApp.config.globalProperties = mainApp.config.globalProperties
+
+  // Copy components (AgentAnnotationOverlay, AgentExportPanel)
+  const ctx = mainApp._context
+  if (ctx.components) {
+    for (const [name, comp] of Object.entries(ctx.components)) {
+      subApp.component(name, comp as any)
+    }
+  }
+
+  // Copy provides (useState needs this)
+  if (ctx.provides) {
+    for (const [key, val] of Object.entries(ctx.provides)) {
+      subApp.provide(key, val)
+    }
+  }
+
+  subApp.mount(container)
 
   // Keyboard shortcut: Cmd+Shift+A toggles annotation mode
   window.addEventListener('keydown', (e: KeyboardEvent) => {

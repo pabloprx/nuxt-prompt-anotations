@@ -100,6 +100,19 @@ function isToolbarElement(el: HTMLElement): boolean {
   return !!el.closest('.agent-toolbar') || !!el.closest('.agent-overlay') || !!el.closest('.agent-export-backdrop')
 }
 
+// Format annotation as markdown and copy to clipboard
+async function copyAnnotation(ann: Annotation) {
+  const lines = [
+    `**${ann.component}** - ${ann.comment}`,
+    `- File: \`${ann.filePath || '-'}\``,
+    `- Selector: \`${ann.cssSelector || '-'}\``,
+  ]
+  if (ann.cssClasses) lines.push(`- Classes: \`${ann.cssClasses}\``)
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'))
+  } catch {}
+}
+
 function onMouseMove(e: MouseEvent) {
   if (inputPos.value) return
 
@@ -168,6 +181,7 @@ function onSubmitComment(e: KeyboardEvent) {
   }
 
   annotations.value = [...annotations.value, annotation]
+  copyAnnotation(annotation)
 
   fetch('/api/__agent/annotations', {
     method: 'POST',
@@ -203,6 +217,7 @@ function onPinSave(ann: Annotation) {
   if (!editPinText.value.trim()) return
   ann.comment = editPinText.value.trim()
   annotations.value = [...annotations.value]
+  copyAnnotation(ann)
   editingPin.value = null
   editPinText.value = ''
 
@@ -255,6 +270,10 @@ onBeforeUnmount(() => {
     <div
       v-if="inputPos"
       class="agent-overlay__input-wrap"
+      @click.stop
+      @mousedown.stop
+      @pointerdown.stop
+      @touchstart.stop
       :style="{ left: inputPos.x + 'px', top: inputPos.y + 'px' }"
     >
       <div class="agent-overlay__input-header">
@@ -284,10 +303,11 @@ onBeforeUnmount(() => {
       <div
         class="agent-overlay__pin"
         @click.stop="onPinClick(ann)"
+        @mousedown.stop
       >
         {{ idx + 1 }}
       </div>
-      <div v-if="editingPin === ann.id" class="agent-overlay__pin-popover">
+      <div v-if="editingPin === ann.id" class="agent-overlay__pin-popover" @click.stop @mousedown.stop>
         <input
           v-model="editPinText"
           class="agent-overlay__input"
@@ -310,7 +330,7 @@ onBeforeUnmount(() => {
 .agent-overlay {
   position: fixed;
   inset: 0;
-  z-index: 99998;
+  z-index: 2147483646;
   pointer-events: none;
 }
 
@@ -326,7 +346,7 @@ onBeforeUnmount(() => {
   background: rgba(0, 212, 255, 0.08);
   pointer-events: none;
   transition: all 0.1s ease;
-  z-index: 99998;
+  z-index: 2147483646;
 }
 
 .agent-overlay__highlight-label {
@@ -345,7 +365,7 @@ onBeforeUnmount(() => {
 
 .agent-overlay__input-wrap {
   position: absolute;
-  z-index: 99999;
+  z-index: 2147483647;
   pointer-events: auto;
   background: #1a1a2e;
   border: 1px solid #00d4ff55;
@@ -402,7 +422,7 @@ onBeforeUnmount(() => {
 
 .agent-overlay__pin-group {
   position: absolute;
-  z-index: 99999;
+  z-index: 2147483647;
   pointer-events: auto;
 }
 

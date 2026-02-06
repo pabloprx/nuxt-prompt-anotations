@@ -269,7 +269,7 @@ function removeRequest(id: string) {
 .agent-export-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 100000;
+  z-index: 2147483647;
   background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
