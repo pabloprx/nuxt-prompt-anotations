@@ -1,20 +1,9 @@
 {
   "name": "nuxt-prompt-annotations",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "nuxt dev",
-    "build": "nuxt build",
-    "generate": "nuxt generate",
-    "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
-  },
+  "version": "0.1.0",
+  "main": "./index.ts",
+  "types": "./index.ts",
   "dependencies": {
-    "nuxt": "^3.14.0",
-    "vue": "^3.5.0",
-    "vue-router": "^4.4.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.6.0"
+    "@nuxt/kit": "^3.0.0"
   }
 }
