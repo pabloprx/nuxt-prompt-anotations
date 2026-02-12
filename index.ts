@@ -15,13 +15,6 @@ export default defineNuxtModule({
 
     const { resolve } = createResolver(import.meta.url)
 
-    // Transpile module's TypeScript (needed when installed from node_modules)
-    nuxt.options.build.transpile.push('nuxt-prompt-annotations')
-    nuxt.options.nitro = nuxt.options.nitro || {}
-    nuxt.options.nitro.externals = nuxt.options.nitro.externals || {}
-    nuxt.options.nitro.externals.inline = nuxt.options.nitro.externals.inline || []
-    ;(nuxt.options.nitro.externals.inline as string[]).push('nuxt-prompt-annotations')
-
     // Client plugins
     addPlugin({ src: resolve('./runtime/network-tracker.client'), mode: 'client' })
     addPlugin({ src: resolve('./runtime/ui-annotator.client'), mode: 'client' })
