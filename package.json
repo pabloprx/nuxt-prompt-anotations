@@ -1,5 +1,5 @@
 {
-  "name": "nuxt-agent-poc",
+  "name": "nuxt-prompt-annotations",
   "private": true,
   "type": "module",
   "scripts": {

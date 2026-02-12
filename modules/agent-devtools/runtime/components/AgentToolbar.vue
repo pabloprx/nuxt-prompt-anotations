@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useState } from '#imports'
 
 const annotating = useState<boolean>('__agent_annotating')
@@ -9,6 +9,61 @@ const selectedRequestIds = useState<string[]>('__agent_selected_requests', () =>
 
 const showNetwork = ref(false)
 const showExport = ref(false)
+const expandedRequestId = ref<string | null>(null)
+
+// Draggable position (persisted to localStorage)
+const STORAGE_KEY = '__agent_toolbar_pos'
+const position = ref<{ x: number; y: number } | null>(null)
+const dragging = ref(false)
+const dragOffset = ref({ x: 0, y: 0 })
+
+function loadPosition() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      const pos = JSON.parse(stored)
+      // Validate it's within viewport
+      if (pos.x >= 0 && pos.y >= 0 && pos.x < window.innerWidth - 50 && pos.y < window.innerHeight - 50) {
+        position.value = pos
+      }
+    }
+  } catch {}
+}
+
+function savePosition() {
+  if (position.value) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(position.value))
+    } catch {}
+  }
+}
+
+function onDragStart(e: MouseEvent) {
+  dragging.value = true
+  const toolbar = (e.target as HTMLElement).closest('.agent-toolbar') as HTMLElement
+  if (!toolbar) return
+  const rect = toolbar.getBoundingClientRect()
+  dragOffset.value = {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top,
+  }
+  document.addEventListener('mousemove', onDragMove)
+  document.addEventListener('mouseup', onDragEnd)
+}
+
+function onDragMove(e: MouseEvent) {
+  if (!dragging.value) return
+  const x = Math.max(0, Math.min(window.innerWidth - 100, e.clientX - dragOffset.value.x))
+  const y = Math.max(0, Math.min(window.innerHeight - 60, e.clientY - dragOffset.value.y))
+  position.value = { x, y }
+}
+
+function onDragEnd() {
+  dragging.value = false
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+  savePosition()
+}
 
 function toggleAnnotate() {
   annotating.value = !annotating.value
@@ -131,9 +186,55 @@ async function copyRequest(req: any) {
   }
 }
 
-// Click handler: just copy, no expand
-function onRequestClick(req: any) {
+// Format JSON with pretty-print, fallback to raw string. Truncate to maxLines.
+const MAX_PREVIEW_LINES = 20
+
+function formatJson(str: string | undefined): string {
+  if (!str) return ''
+  let formatted: string
+  try {
+    formatted = JSON.stringify(JSON.parse(str), null, 2)
+  } catch {
+    formatted = str
+  }
+  const lines = formatted.split('\n')
+  if (lines.length > MAX_PREVIEW_LINES) {
+    return lines.slice(0, MAX_PREVIEW_LINES).join('\n') + '\n... (' + (lines.length - MAX_PREVIEW_LINES) + ' more lines)'
+  }
+  return formatted
+}
+
+function formatHeadersPreview(headers: Record<string, string> | undefined): string {
+  if (!headers || Object.keys(headers).length === 0) return ''
+  const entries = Object.entries(headers)
+  const lines = entries.map(([k, v]) => `${k}: ${v}`)
+  if (lines.length > MAX_PREVIEW_LINES) {
+    return lines.slice(0, MAX_PREVIEW_LINES).join('\n') + '\n... (' + (lines.length - MAX_PREVIEW_LINES) + ' more lines)'
+  }
+  return lines.join('\n')
+}
+
+// Click handler: toggle expand + copy
+function onRequestClick(req: any, event: MouseEvent) {
+  const isExpanding = expandedRequestId.value !== req.id
+  expandedRequestId.value = isExpanding ? req.id : null
   copyRequest(req)
+  if (isExpanding) {
+    nextTick(() => {
+      const wrap = (event.target as HTMLElement).closest('.agent-toolbar__request-wrap')
+      if (wrap) {
+        const panel = wrap.closest('.agent-toolbar__panel-scroll')
+        if (panel) {
+          const wrapRect = wrap.getBoundingClientRect()
+          const panelRect = panel.getBoundingClientRect()
+          // If the bottom of the wrap is below the panel viewport, scroll so it's visible
+          if (wrapRect.bottom > panelRect.bottom) {
+            panel.scrollTop += wrapRect.bottom - panelRect.bottom + 8
+          }
+        }
+      }
+    })
+  }
 }
 
 // Global keyboard handler
@@ -161,6 +262,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
+  loadPosition()
   window.addEventListener('keydown', onKeydown)
 })
 
@@ -170,7 +272,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="agent-toolbar">
+  <div
+    class="agent-toolbar"
+    :class="{ 'agent-toolbar--custom-pos': position, 'agent-toolbar--dragging': dragging }"
+    :style="position ? { left: position.x + 'px', top: position.y + 'px', right: 'auto', bottom: 'auto' } : {}"
+  >
       <!-- Toolbar buttons -->
       <div class="agent-toolbar__buttons">
         <div class="agent-toolbar__btn-wrap">
@@ -241,6 +347,22 @@ onBeforeUnmount(() => {
             </svg>
           </button>
         </div>
+
+        <!-- Drag handle -->
+        <div
+          class="agent-toolbar__drag"
+          title="Drag to move"
+          @mousedown.prevent="onDragStart"
+        >
+          <svg width="14" height="6" viewBox="0 0 14 6" fill="currentColor">
+            <circle cx="2" cy="1" r="1" />
+            <circle cx="7" cy="1" r="1" />
+            <circle cx="12" cy="1" r="1" />
+            <circle cx="2" cy="5" r="1" />
+            <circle cx="7" cy="5" r="1" />
+            <circle cx="12" cy="5" r="1" />
+          </svg>
+        </div>
       </div>
 
       <!-- Network panel -->
@@ -271,10 +393,11 @@ onBeforeUnmount(() => {
                 class="agent-toolbar__request"
                 :class="{
                   'agent-toolbar__request--selected': selectedSet.has(req.id),
-                  'agent-toolbar__request--copied': copiedId === req.id
+                  'agent-toolbar__request--copied': copiedId === req.id,
+                  'agent-toolbar__request--expanded': expandedRequestId === req.id
                 }"
                 :style="{ borderLeftColor: statusColor(req.status) }"
-                @click="onRequestClick(req)"
+                @click="onRequestClick(req, $event)"
               >
                 <input
                   type="checkbox"
@@ -293,6 +416,34 @@ onBeforeUnmount(() => {
                 </span>
                 <span class="agent-toolbar__req-duration">{{ req.duration }}ms</span>
                 <span v-if="copiedId === req.id" class="agent-toolbar__req-copied">Copied</span>
+                <svg
+                  class="agent-toolbar__req-chevron"
+                  :class="{ 'agent-toolbar__req-chevron--open': expandedRequestId === req.id }"
+                  width="12" height="12" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+              <!-- Inline detail view -->
+              <div v-if="expandedRequestId === req.id" class="agent-toolbar__request-details">
+                <div v-if="req.requestHeaders && Object.keys(req.requestHeaders).length" class="agent-toolbar__detail-section">
+                  <div class="agent-toolbar__detail-label">Request Headers</div>
+                  <pre class="agent-toolbar__detail-pre">{{ formatHeadersPreview(req.requestHeaders) }}</pre>
+                </div>
+                <div v-if="req.requestBody" class="agent-toolbar__detail-section">
+                  <div class="agent-toolbar__detail-label">Request Body</div>
+                  <pre class="agent-toolbar__detail-pre">{{ formatJson(req.requestBody) }}</pre>
+                </div>
+                <div v-if="req.responseHeaders && Object.keys(req.responseHeaders).length" class="agent-toolbar__detail-section">
+                  <div class="agent-toolbar__detail-label">Response Headers</div>
+                  <pre class="agent-toolbar__detail-pre">{{ formatHeadersPreview(req.responseHeaders) }}</pre>
+                </div>
+                <div v-if="req.responseBody" class="agent-toolbar__detail-section">
+                  <div class="agent-toolbar__detail-label">Response Body</div>
+                  <pre class="agent-toolbar__detail-pre">{{ formatJson(req.responseBody) }}</pre>
+                </div>
               </div>
             </div>
             <div v-if="!requests?.length" class="agent-toolbar__empty">
@@ -320,13 +471,39 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
+.agent-toolbar--custom-pos {
+  right: auto;
+  bottom: auto;
+}
+
 .agent-toolbar__buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   background: #1a1a2e;
   padding: 6px 6px 4px;
   border-radius: 10px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.agent-toolbar__drag {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 2px;
+  cursor: grab;
+  color: #4a4a6a;
+  transition: color 0.15s;
+}
+
+.agent-toolbar__drag:hover {
+  color: #8080a0;
+}
+
+.agent-toolbar__drag:active,
+.agent-toolbar--dragging .agent-toolbar__drag {
+  cursor: grabbing;
+  color: #00d4ff;
 }
 
 .agent-toolbar__btn-wrap {
@@ -363,9 +540,14 @@ onBeforeUnmount(() => {
   color: #e0e0ff;
 }
 
+.agent-toolbar__btn:active {
+  transform: scale(0.92);
+}
+
 .agent-toolbar__btn--active {
   background: #00d4ff33;
   color: #00d4ff;
+  box-shadow: 0 0 0 2px #00d4ff55;
 }
 
 .agent-toolbar__btn--reset {
@@ -400,8 +582,8 @@ onBeforeUnmount(() => {
   position: absolute;
   bottom: 52px;
   right: 0;
-  width: 420px;
-  max-height: 400px;
+  width: 500px;
+  max-height: 450px;
   background: #1a1a2e;
   border-radius: 10px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
@@ -458,8 +640,9 @@ onBeforeUnmount(() => {
 
 .agent-toolbar__panel-scroll {
   overflow-y: auto;
-  max-height: 340px;
+  max-height: 390px;
   padding: 6px;
+  overscroll-behavior: contain;
 }
 
 .agent-toolbar__request-wrap {
@@ -490,6 +673,12 @@ onBeforeUnmount(() => {
 
 .agent-toolbar__request--copied {
   background: #2ed57322;
+}
+
+.agent-toolbar__request--expanded {
+  background: #1e1e3a;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .agent-toolbar__req-copied {
@@ -528,6 +717,55 @@ onBeforeUnmount(() => {
   min-width: 50px;
   text-align: right;
   color: #8888aa;
+}
+
+.agent-toolbar__req-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: #6060a0;
+  transition: transform 0.15s;
+}
+
+.agent-toolbar__req-chevron--open {
+  transform: rotate(180deg);
+  color: #00d4ff;
+}
+
+.agent-toolbar__request-details {
+  border-top: 1px solid #2a2a4e;
+  background: #12122244;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 0 0 4px 4px;
+}
+
+.agent-toolbar__detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-toolbar__detail-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6060a0;
+}
+
+.agent-toolbar__detail-pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: #0e0e1a;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #c0c0e0;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .agent-toolbar__empty {
