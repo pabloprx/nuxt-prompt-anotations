@@ -4,13 +4,14 @@ Nuxt module for visualizing and managing AI prompt annotations in your app. Dev-
 
 ## Setup
 
-1. Clone this repo next to your project:
+1. Clone and install:
 
 ```bash
 git clone git@github.com:pabloprx/nuxt-prompt-anotations.git ../nuxt-prompt-anotations
+cd ../nuxt-prompt-anotations && npm install && cd -
 ```
 
-2. Add it to your `nuxt.config.ts` as a local path:
+2. Add to your `nuxt.config.ts`:
 
 ```ts
 export default defineNuxtConfig({
